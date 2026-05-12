@@ -41,6 +41,8 @@
     panStart: null,
     selectStart: null,
     modalNodeId: null,
+    dragMoved: false,
+    suppressNodeClickUntil: 0,
   };
 
   let idCounter = 0;
@@ -62,26 +64,40 @@
   const colorPicker = $('#colorPicker');
   const zoomDisplay = $('#zoomLevel');
   const selectionRect = $('#selectionRect');
+  const connectBtn = $('#btnConnect');
 
   // ---- Markdown + LaTeX rendering ----
   function renderMd(text) {
     if (!text) return '';
+    const mathTokens = [];
+    const stashMath = (html) => {
+      const token = `MINDGRAPH_MATH_${mathTokens.length}__`;
+      mathTokens.push(html);
+      return token;
+    };
+    const escapeHtml = (value) => value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
     // Process LaTeX before markdown
     // Display math: $$...$$
     let processed = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => {
       try {
-        return '<div class="katex-display">' + katex.renderToString(tex.trim(), { displayMode: true, throwOnError: false }) + '</div>';
-      } catch { return '<code>' + tex + '</code>'; }
+        return stashMath('<div class="katex-display">' + katex.renderToString(tex.trim(), { displayMode: true, throwOnError: false }) + '</div>');
+      } catch { return stashMath('<code>' + escapeHtml(tex) + '</code>'); }
     });
     // Inline math: $...$  (but not $$)
     processed = processed.replace(/(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)/g, (_, tex) => {
       try {
-        return katex.renderToString(tex.trim(), { displayMode: false, throwOnError: false });
-      } catch { return '<code>' + tex + '</code>'; }
+        return stashMath(katex.renderToString(tex.trim(), { displayMode: false, throwOnError: false }));
+      } catch { return stashMath('<code>' + escapeHtml(tex) + '</code>'); }
     });
+    processed = escapeHtml(processed);
     // Now render markdown
     const html = marked.parse(processed, { breaks: true, gfm: true });
-    return html;
+    return html.replace(/MINDGRAPH_MATH_(\d+)__/g, (_, index) => mathTokens[Number(index)] || '');
   }
 
   // ---- Viewport / transform ----
@@ -163,12 +179,12 @@
     // Body click -> open modal
     el.querySelector('.node-body').addEventListener('click', (e) => {
       if (state.connectMode) { finishConnection(node.id); return; }
+      if (Date.now() < state.suppressNodeClickUntil) {
+        e.stopPropagation();
+        return;
+      }
       e.stopPropagation();
       openModal(node.id);
-    });
-    el.querySelector('.node-body').addEventListener('mousedown', (e) => {
-      if (state.connectMode) return;
-      e.stopPropagation();
     });
 
     // Expand button -> open modal
@@ -444,6 +460,10 @@
     state.connectMode = true;
     state.connectFrom = nodeId;
     canvas.classList.add('connecting');
+    connectBtn.classList.add('active');
+    nodesCont.querySelectorAll('.node').forEach(el => {
+      el.classList.toggle('connect-target', el.dataset.id !== nodeId);
+    });
     showToast('Click another node to connect, or Esc to cancel');
   }
 
@@ -467,7 +487,9 @@
     state.connectMode = false;
     state.connectFrom = null;
     canvas.classList.remove('connecting');
+    connectBtn.classList.remove('active');
     svg.querySelector('.connection-temp')?.remove();
+    nodesCont.querySelectorAll('.node').forEach(el => el.classList.remove('connect-target'));
   }
 
   // ---- Modal ----
@@ -840,14 +862,18 @@
     const target = e.target.closest('.node');
 
     if (state.connectMode && target) {
-      finishConnection(target.dataset.id);
+      if (state.connectFrom) finishConnection(target.dataset.id);
+      else startConnection(target.dataset.id);
       return;
     }
 
     if (target) {
       const nodeId = target.dataset.id;
-      const header = e.target.closest('.node-header');
-      if (!header) return; // Only drag from header
+      const isInteractive =
+        e.target.closest('.node-expand') ||
+        e.target.closest('.node-port') ||
+        e.target.closest('.node-header-text');
+      if (isInteractive) return;
 
       if (e.shiftKey) {
         // Toggle selection
@@ -862,6 +888,7 @@
       const node = state.nodes.find(n => n.id === nodeId);
       if (!node) return;
       state.isDragging = true;
+      state.dragMoved = false;
       canvas.classList.add('grabbing');
       const world = screenToWorld(e.clientX, e.clientY);
       state.dragOffset = { x: world.x - node.x, y: world.y - node.y };
@@ -900,6 +927,9 @@
       const newY = world.y - state.dragOffset.y;
       const dx = newX - state._dragStart.x;
       const dy = newY - state._dragStart.y;
+      if (!state.dragMoved && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) {
+        state.dragMoved = true;
+      }
 
       for (const sid of state.selected) {
         const sn = state.nodes.find(n => n.id === sid);
@@ -962,6 +992,7 @@
     if (state.isDragging) {
       state.isDragging = false;
       canvas.classList.remove('grabbing');
+      if (state.dragMoved) state.suppressNodeClickUntil = Date.now() + 150;
       save();
     }
     if (state.isPanning) {
@@ -1088,11 +1119,12 @@
   function toggleConnectMode() {
     if (state.connectMode) {
       cancelConnection();
-      $('#btnConnect').classList.remove('active');
     } else {
       state.connectMode = true;
+      state.connectFrom = null;
       canvas.classList.add('connecting');
-      $('#btnConnect').classList.add('active');
+      connectBtn.classList.add('active');
+      nodesCont.querySelectorAll('.node').forEach(el => el.classList.add('connect-target'));
       showToast('Click a node to start connecting');
     }
   }
