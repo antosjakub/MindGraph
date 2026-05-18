@@ -69,6 +69,44 @@
   const zoomDisplay = $('#zoomLevel');
   const selectionRect = $('#selectionRect');
   const connectBtn = $('#btnConnect');
+  const editorModeBadge = $('#editorModeBadge');
+
+  function setEditorBadge(text, kind) {
+    if (!editorModeBadge) return;
+    editorModeBadge.textContent = text;
+    editorModeBadge.dataset.mode = kind;
+  }
+
+  function editorBridge() {
+    return window.MindGraphCodeEditor || null;
+  }
+
+  function getModalEditorValue() {
+    const editor = editorBridge();
+    return editor?.isReady() ? editor.getValue() : modalEditor.value;
+  }
+
+  function setModalEditorValue(value) {
+    const text = value || '';
+    modalEditor.value = text;
+    const editor = editorBridge();
+    if (editor?.isReady()) editor.setValue(text);
+  }
+
+  function focusModalEditor() {
+    const editor = editorBridge();
+    if (editor?.isReady()) editor.focus();
+    else modalEditor.focus();
+  }
+
+  function refreshModalEditor() {
+    const editor = editorBridge();
+    if (editor?.isReady() && editor.refresh) editor.refresh();
+  }
+
+  function refreshModalPreview() {
+    modalPreview.innerHTML = renderMd(getModalEditorValue());
+  }
 
   function escapeHtml(value) {
     return value
@@ -608,10 +646,12 @@
     if (!node) return;
     state.modalNodeId = nodeId;
     modalTitle.value = node.title;
-    modalEditor.value = node.body || '';
-    modalPreview.innerHTML = renderMd(node.body || '');
+    setModalEditorValue(node.body || '');
+    refreshModalPreview();
     editorModal.classList.remove('hidden');
-    modalEditor.focus();
+    refreshModalEditor();
+    requestAnimationFrame(refreshModalEditor);
+    focusModalEditor();
   }
 
   function closeModalFn() {
@@ -619,7 +659,7 @@
       const node = state.nodes.find(n => n.id === state.modalNodeId);
       if (node) {
         node.title = modalTitle.value.trim() || 'Untitled';
-        node.body = modalEditor.value;
+        node.body = getModalEditorValue();
         updateNodeEl(node);
         refreshNodeBody(node);
         save();
@@ -629,13 +669,32 @@
     editorModal.classList.add('hidden');
   }
 
-  modalEditor.addEventListener('input', () => {
-    modalPreview.innerHTML = renderMd(modalEditor.value);
-  });
+  modalEditor.addEventListener('input', refreshModalPreview);
 
   modalTitle.addEventListener('keydown', (e) => {
     e.stopPropagation();
   });
+
+  function bindCodeEditor() {
+    const editor = editorBridge();
+    if (!editor?.onChange) return;
+    editor.onChange((value) => {
+      modalEditor.value = value;
+      refreshModalPreview();
+    });
+  }
+
+  bindCodeEditor();
+  window.addEventListener('mindgraph:editor-ready', bindCodeEditor);
+  window.addEventListener('mindgraph:editor-ready', () => setEditorBadge('CodeMirror • Vim', 'vim'));
+  window.addEventListener('error', (e) => {
+    if (typeof e.filename === 'string' && e.filename.includes('codemirror-editor.js')) {
+      setEditorBadge('Fallback textarea', 'fallback');
+    }
+  });
+  setTimeout(() => {
+    if (!editorBridge()?.isReady()) setEditorBadge('Fallback textarea', 'fallback');
+  }, 1200);
 
   editorModal.addEventListener('mousedown', (e) => {
     state.modalPointerDownInside = !!e.target.closest('.modal-content');

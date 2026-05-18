@@ -19,6 +19,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MindGraph</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/codemirror.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -109,7 +110,11 @@
       </div>
       <div class="modal-body">
         <div class="editor-panes">
-          <textarea id="modalEditor" spellcheck="false" placeholder="Write markdown here... Use $...$ for inline LaTeX, $$...$$ for display math, and ```code``` for code blocks."></textarea>
+          <div class="modal-editor-pane">
+            <div id="editorModeBadge" class="editor-mode-badge">Loading editor…</div>
+            <div id="modalEditorCm" class="modal-editor-cm"></div>
+            <textarea id="modalEditor" spellcheck="false" placeholder="Write markdown here... Use $...$ for inline LaTeX, $$...$$ for display math, and ```code``` for code blocks."></textarea>
+          </div>
           <div id="modalPreview" class="md-preview"></div>
         </div>
       </div>
@@ -144,6 +149,10 @@
 
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/mode/markdown/markdown.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/keymap/vim.min.js"></script>
+  <script src="codemirror-editor.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

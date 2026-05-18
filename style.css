@@ -537,10 +537,48 @@ html, body {
   grid-template-columns: 1fr 1fr;
   height: 100%;
 }
+.modal-editor-pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+}
+.editor-mode-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.editor-mode-badge[data-mode="vim"] {
+  color: var(--accent);
+  border-color: rgba(79, 152, 163, 0.4);
+  background: rgba(79, 152, 163, 0.12);
+}
+.editor-mode-badge[data-mode="fallback"] {
+  color: #fdab43;
+  border-color: rgba(253, 171, 67, 0.4);
+  background: rgba(253, 171, 67, 0.12);
+}
+.modal-editor-cm {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
 #modalEditor {
+  position: absolute;
+  inset: 0;
   resize: none;
   border: none;
-  border-right: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-mono);
@@ -552,11 +590,50 @@ html, body {
   overflow: auto;
   scrollbar-width: none;
 }
+.cm-fallback-hidden {
+  display: none;
+}
 #modalPreview {
   padding: 16px;
   overflow-y: auto;
   background: var(--surface);
   scrollbar-width: none;
+}
+.cm-editor {
+  height: 100%;
+}
+.cm-focused {
+  outline: none !important;
+}
+.CodeMirror {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--bg);
+  color: var(--text);
+}
+.CodeMirror-scroll {
+  padding: 16px;
+}
+.CodeMirror-gutters {
+  display: none;
+}
+.CodeMirror-cursor {
+  border-left: 1px solid #ffffff;
+}
+.CodeMirror.cm-fat-cursor .CodeMirror-cursor {
+  width: auto;
+  border: 0 !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+}
+.CodeMirror-selected {
+  background: rgba(79, 152, 163, 0.3) !important;
+}
+.CodeMirror-focused {
+  outline: none;
 }
 #modalEditor::-webkit-scrollbar,
 #modalPreview::-webkit-scrollbar {
