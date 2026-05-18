@@ -43,6 +43,10 @@
     modalNodeId: null,
     dragMoved: false,
     suppressNodeClickUntil: 0,
+    suppressModalCloseUntil: 0,
+    previewSelecting: false,
+    previewSelectionMoved: false,
+    modalPointerDownInside: false,
   };
 
   let idCounter = 0;
@@ -66,6 +70,108 @@
   const selectionRect = $('#selectionRect');
   const connectBtn = $('#btnConnect');
 
+  function escapeHtml(value) {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function renderInlineMd(text) {
+    return text
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  }
+
+  function renderMdFallback(text) {
+    const lines = text.split('\n');
+    const html = [];
+    let paragraph = [];
+    let listItems = [];
+    let codeLines = [];
+    let inCodeBlock = false;
+
+    function flushParagraph() {
+      if (!paragraph.length) return;
+      html.push('<p>' + renderInlineMd(paragraph.join('<br>')) + '</p>');
+      paragraph = [];
+    }
+
+    function flushList() {
+      if (!listItems.length) return;
+      html.push('<ul>' + listItems.map(item => '<li>' + renderInlineMd(item) + '</li>').join('') + '</ul>');
+      listItems = [];
+    }
+
+    function flushCodeBlock() {
+      if (!codeLines.length) return;
+      html.push('<pre><code>' + codeLines.join('\n') + '</code></pre>');
+      codeLines = [];
+    }
+
+    for (const line of lines) {
+      if (line.startsWith('```')) {
+        flushParagraph();
+        flushList();
+        if (inCodeBlock) {
+          flushCodeBlock();
+          inCodeBlock = false;
+        } else {
+          inCodeBlock = true;
+        }
+        continue;
+      }
+
+      if (inCodeBlock) {
+        codeLines.push(line);
+        continue;
+      }
+
+      if (!line.trim()) {
+        flushParagraph();
+        flushList();
+        continue;
+      }
+
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        flushParagraph();
+        flushList();
+        const level = heading[1].length;
+        html.push(`<h${level}>${renderInlineMd(heading[2])}</h${level}>`);
+        continue;
+      }
+
+      const listItem = line.match(/^[-*]\s+(.*)$/);
+      if (listItem) {
+        flushParagraph();
+        listItems.push(listItem[1]);
+        continue;
+      }
+
+      paragraph.push(line);
+    }
+
+    flushParagraph();
+    flushList();
+    flushCodeBlock();
+
+    return html.join('');
+  }
+
+  function renderMath(tex, displayMode) {
+    if (window.katex?.renderToString) {
+      return window.katex.renderToString(tex.trim(), { displayMode, throwOnError: false });
+    }
+    const cls = displayMode ? 'math-display' : 'math-inline';
+    const tag = displayMode ? 'div' : 'span';
+    return `<${tag} class="${cls}"><code>${escapeHtml(tex.trim())}</code></${tag}>`;
+  }
+
   // ---- Markdown + LaTeX rendering ----
   function renderMd(text) {
     if (!text) return '';
@@ -75,28 +181,24 @@
       mathTokens.push(html);
       return token;
     };
-    const escapeHtml = (value) => value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
     // Process LaTeX before markdown
     // Display math: $$...$$
     let processed = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => {
       try {
-        return stashMath('<div class="katex-display">' + katex.renderToString(tex.trim(), { displayMode: true, throwOnError: false }) + '</div>');
+        return stashMath(renderMath(tex, true));
       } catch { return stashMath('<code>' + escapeHtml(tex) + '</code>'); }
     });
     // Inline math: $...$  (but not $$)
     processed = processed.replace(/(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)/g, (_, tex) => {
       try {
-        return stashMath(katex.renderToString(tex.trim(), { displayMode: false, throwOnError: false }));
+        return stashMath(renderMath(tex, false));
       } catch { return stashMath('<code>' + escapeHtml(tex) + '</code>'); }
     });
     processed = escapeHtml(processed);
     // Now render markdown
-    const html = marked.parse(processed, { breaks: true, gfm: true });
+    const html = window.marked?.parse
+      ? window.marked.parse(processed, { breaks: true, gfm: true })
+      : renderMdFallback(processed);
     return html.replace(/MINDGRAPH_MATH_(\d+)__/g, (_, index) => mathTokens[Number(index)] || '');
   }
 
@@ -123,6 +225,13 @@
   function worldToScreen(wx, wy) {
     const { x, y, zoom } = state.viewport;
     return { x: wx * zoom + x, y: wy * zoom + y };
+  }
+
+  function commitActiveTitleEdit() {
+    const active = document.activeElement;
+    if (active?.classList?.contains('node-header-text')) {
+      active.blur();
+    }
   }
 
   // ---- Node rendering ----
@@ -494,10 +603,11 @@
 
   // ---- Modal ----
   function openModal(nodeId) {
+    commitActiveTitleEdit();
     const node = state.nodes.find(n => n.id === nodeId);
     if (!node) return;
     state.modalNodeId = nodeId;
-    modalTitle.textContent = node.title;
+    modalTitle.value = node.title;
     modalEditor.value = node.body || '';
     modalPreview.innerHTML = renderMd(node.body || '');
     editorModal.classList.remove('hidden');
@@ -508,7 +618,9 @@
     if (state.modalNodeId) {
       const node = state.nodes.find(n => n.id === state.modalNodeId);
       if (node) {
+        node.title = modalTitle.value.trim() || 'Untitled';
         node.body = modalEditor.value;
+        updateNodeEl(node);
         refreshNodeBody(node);
         save();
       }
@@ -519,6 +631,35 @@
 
   modalEditor.addEventListener('input', () => {
     modalPreview.innerHTML = renderMd(modalEditor.value);
+  });
+
+  modalTitle.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+  });
+
+  editorModal.addEventListener('mousedown', (e) => {
+    state.modalPointerDownInside = !!e.target.closest('.modal-content');
+  });
+
+  modalPreview.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    state.previewSelecting = true;
+    state.previewSelectionMoved = false;
+  });
+
+  window.addEventListener('mousemove', () => {
+    if (state.previewSelecting) state.previewSelectionMoved = true;
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (state.previewSelecting) {
+      if (state.previewSelectionMoved || window.getSelection()?.toString()) {
+        state.suppressModalCloseUntil = Date.now() + 200;
+      }
+      state.previewSelecting = false;
+      state.previewSelectionMoved = false;
+    }
+    setTimeout(() => { state.modalPointerDownInside = false; }, 0);
   });
 
   // Tab in textarea
@@ -535,7 +676,13 @@
 
   $('#closeModal').addEventListener('click', closeModalFn);
   editorModal.addEventListener('click', (e) => {
-    if (e.target === editorModal) closeModalFn();
+    if (
+      e.target === editorModal &&
+      !state.modalPointerDownInside &&
+      Date.now() >= state.suppressModalCloseUntil
+    ) {
+      closeModalFn();
+    }
   });
 
   // ---- Context menu ----
@@ -1021,12 +1168,14 @@
 
   // Keyboard
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && state.modalNodeId) {
+      e.preventDefault();
+      closeModalFn();
+      return;
+    }
+
     // Don't intercept if editing text
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
-      if (e.key === 'Escape') {
-        e.target.blur();
-        if (state.modalNodeId) closeModalFn();
-      }
       return;
     }
 

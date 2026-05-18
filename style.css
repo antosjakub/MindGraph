@@ -19,8 +19,8 @@
   --danger: #dd6974;
   --radius: 6px;
   --radius-lg: 10px;
-  --font-body: 'Satoshi', 'Inter', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-body: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SFMono-Regular", "Cascadia Mono", "Consolas", monospace;
   --transition: 150ms ease;
   --grid-color: rgba(255, 255, 255, 0.03);
   --grid-size: 40px;
@@ -199,7 +199,7 @@ html, body {
   font-size: 14px;
   font-weight: 600;
   border-bottom: 1px solid var(--border);
-  cursor: move;
+  cursor: text;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -217,6 +217,7 @@ html, body {
   outline: none;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: text;
 }
 .node-header-text:focus {
   background: var(--surface-2);
@@ -231,10 +232,11 @@ html, body {
   line-height: 1.55;
   color: var(--text-muted);
   max-height: 260px;
-  overflow-y: auto;
+  overflow: hidden;
   overflow-x: hidden;
-  cursor: pointer;
+  cursor: grab;
 }
+.node-body:active { cursor: grabbing; }
 .node-body:empty::before {
   content: 'Click to add notes...';
   color: var(--text-faint);
@@ -248,6 +250,56 @@ html, body {
   font-size: 13px;
   line-height: 1.55;
   color: var(--text-muted);
+}
+.node-body .md-preview p,
+.node-body .md-preview ul,
+.node-body .md-preview pre,
+.node-body .md-preview h1,
+.node-body .md-preview h2,
+.node-body .md-preview h3,
+.node-body .md-preview h4,
+.node-body .md-preview h5,
+.node-body .md-preview h6 {
+  display: block;
+  margin: 0 0 8px;
+}
+.node-body .md-preview > :last-child {
+  margin-bottom: 0;
+}
+.node-body .md-preview ul {
+  padding-left: 18px;
+}
+.node-body .md-preview a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.node-body .md-preview code,
+.node-body .md-preview pre {
+  font-family: var(--font-mono);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: 6px;
+}
+.node-body .md-preview code {
+  padding: 1px 4px;
+}
+.node-body .md-preview pre {
+  padding: 8px 10px;
+  overflow-x: auto;
+}
+.node-body .md-preview .math-inline code,
+.node-body .md-preview .math-display code {
+  color: var(--accent);
+}
+.node-body .md-preview .math-display {
+  display: block;
+  margin: 6px 0;
+  overflow-y: hidden;
+}
+.node-body .md-preview .katex-display {
+  margin: 6px 0;
+  padding: 2px 0;
+  overflow-y: hidden;
 }
 
 /* Expand button — shows on hover near node body */
@@ -457,7 +509,20 @@ html, body {
   padding: 12px 18px;
   border-bottom: 1px solid var(--border);
 }
-.modal-header h3 { font-size: 15px; font-weight: 600; }
+#modalTitle {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  outline: none;
+}
+#modalTitle::placeholder {
+  color: var(--text-muted);
+}
 .modal-close {
   width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;
@@ -484,11 +549,19 @@ html, body {
   padding: 16px;
   outline: none;
   tab-size: 2;
+  overflow: auto;
+  scrollbar-width: none;
 }
 #modalPreview {
   padding: 16px;
   overflow-y: auto;
   background: var(--surface);
+  scrollbar-width: none;
+}
+#modalEditor::-webkit-scrollbar,
+#modalPreview::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 /* ---- Context menu ---- */
@@ -611,7 +684,7 @@ html, body {
 /* KaTeX display math centering */
 .md-preview .katex-display {
   margin: 0.8em 0;
-  overflow-x: auto;
+  overflow: visible;
 }
 
 /* ---- Zoom-dependent detail hiding ---- */
