@@ -472,9 +472,23 @@ html, body {
 }
 .board-item:hover .board-item-actions { opacity: 1; }
 .board-item-actions button {
-  width: 22px; height: 22px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 3px; font-size: 12px; color: var(--text-muted); cursor: pointer;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
 }
 .board-item-actions button:hover { background: var(--surface-3); color: var(--text); }
 .board-item-actions .del-btn:hover { color: var(--danger); }
@@ -524,12 +538,30 @@ html, body {
   color: var(--text-muted);
 }
 .modal-close {
-  width: 28px; height: 28px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px; color: var(--text-muted);
-  border-radius: var(--radius); cursor: pointer;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
 }
-.modal-close:hover { background: var(--surface-2); color: var(--text); }
+.modal-close:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
 .modal-body { flex: 1; overflow: hidden; }
 
 .editor-panes {
