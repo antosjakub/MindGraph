@@ -9,16 +9,17 @@ This project seeks to reproduce this in a digital form.
 
 | Key                 | Action                       |
 | ------------------- | ---------------------------- |
-| N                   | New node                     |
-| C                   | Connect mode                 |
+| H / J / K / L       | Pan the board view           |
+| A                   | Add node or field at crosshair |
+| C                   | Connect node under crosshair |
 | G                   | Group selected               |
 | B                   | Toggle boards panel          |
 | F                   | Fit view                     |
-| Enter               | Open modal for selected node |
+| Enter               | Edit item under crosshair    |
+| D                   | Delete item under crosshair  |
 | Delete              | Delete selected              |
 | Esc                 | Cancel / close               |
 | + / -               | Zoom in/out                  |
-| Arrows              | Pan the view                 |
 | Ctrl+A              | Select all                   |
 | Shift+click         | Multi-select                 |
 | Shift+drag          | Rectangle select             |

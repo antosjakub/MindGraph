@@ -169,6 +169,77 @@ html, body {
 }
 .hidden { display: none !important; }
 
+/* ---- Keyboard navigation crosshair ---- */
+.board-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 70;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.8));
+}
+.board-crosshair::before,
+.board-crosshair::after {
+  content: '';
+  position: absolute;
+  background: rgba(224, 224, 224, 0.8);
+}
+.board-crosshair::before {
+  left: 10px;
+  top: 0;
+  width: 1px;
+  height: 22px;
+}
+.board-crosshair::after {
+  left: 0;
+  top: 10px;
+  width: 22px;
+  height: 1px;
+}
+.node.crosshair-target,
+.field.crosshair-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim), 0 0 18px var(--accent-glow);
+}
+
+.add-menu {
+  position: fixed;
+  left: calc(50% + 16px);
+  top: calc(50% + 38px);
+  width: 180px;
+  padding: 5px;
+  z-index: 180;
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.add-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: transparent;
+  font: 13px var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+.add-menu button.active,
+.add-menu button:hover {
+  color: var(--text);
+  background: var(--accent-dim);
+}
+.add-menu-hint {
+  padding: 6px 10px 3px;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
 /* ---- Nodes ---- */
 .node {
   position: absolute;
@@ -192,6 +263,45 @@ html, body {
 .node.connect-target {
   border-color: var(--accent);
   box-shadow: 0 0 12px var(--accent-dim);
+}
+.connection-shortcut {
+  position: absolute;
+  top: -11px;
+  right: -11px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid var(--accent);
+  border-radius: 11px;
+  background: var(--bg);
+  color: var(--accent);
+  font: 700 11px/20px var(--font-mono);
+  text-align: center;
+  cursor: pointer;
+  z-index: 10;
+}
+
+/* ---- Freeform text fields ---- */
+.field {
+  position: absolute;
+  width: 280px;
+  min-height: 56px;
+  max-height: 320px;
+  padding: 12px 14px;
+  overflow: hidden;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius);
+  background: rgba(22, 22, 22, 0.82);
+  color: var(--text);
+  cursor: pointer;
+  z-index: 4;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.field:hover { border-color: var(--text-muted); }
+.field:empty::before {
+  content: 'Empty field';
+  color: var(--text-faint);
+  font-style: italic;
 }
 
 .node-header {
@@ -537,6 +647,14 @@ html, body {
 #modalTitle::placeholder {
   color: var(--text-muted);
 }
+.modal-type-label {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .modal-close {
   width: 28px;
   height: 28px;
@@ -798,6 +916,7 @@ html, body {
 
 /* ---- Zoom-dependent detail hiding ---- */
 .zoom-far .node-body { display: none; }
+.zoom-far .field { font-size: 11px; }
 .zoom-far .node-expand { display: none; }
 .zoom-far .node { max-width: none; min-width: 80px; }
 .zoom-far .node-header {
@@ -817,6 +936,7 @@ html, body {
   border-bottom: none;
 }
 .zoom-very-far .node-port { display: none; }
+.zoom-very-far .field { width: 140px; max-height: 80px; font-size: 9px; padding: 6px; }
 .zoom-very-far .subgraph-label { font-size: 8px; }
 
 /* ---- Scrollbar ---- */

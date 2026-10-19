@@ -24,9 +24,10 @@
 
   // ---- State ----
   const state = {
-    boards: [],           // [{id, name, data: {nodes, connections, groups, viewport}}]
+    boards: [],           // [{id, name, data: {nodes, fields, connections, groups, viewport}}]
     activeBoardId: null,
     nodes: [],            // [{id, x, y, title, body, color, groupId}]
+    fields: [],           // [{id, x, y, body}]
     connections: [],      // [{id, from, to}]
     groups: [],           // [{id, label, nodeIds, color}]
     viewport: { x: 0, y: 0, zoom: 1 },
@@ -34,6 +35,8 @@
     selectedConnections: new Set(),
     connectMode: false,
     connectFrom: null,
+    connectionTargets: [],
+    connectionNumberBuffer: '',
     isDragging: false,
     isPanning: false,
     isSelecting: false,
@@ -41,6 +44,9 @@
     panStart: null,
     selectStart: null,
     modalNodeId: null,
+    modalFieldId: null,
+    addMenuOpen: false,
+    addMenuIndex: 0,
     dragMoved: false,
     suppressNodeClickUntil: 0,
     suppressModalCloseUntil: 0,
@@ -70,6 +76,8 @@
   const selectionRect = $('#selectionRect');
   const connectBtn = $('#btnConnect');
   const editorModeBadge = $('#editorModeBadge');
+  const modalTypeLabel = $('#modalTypeLabel');
+  const addMenu = $('#addMenu');
 
   function setEditorBadge(text, kind) {
     if (!editorModeBadge) return;
@@ -253,16 +261,50 @@
     canvas.classList.toggle('zoom-far', zoom < 0.5 && zoom >= 0.25);
     canvas.classList.toggle('zoom-very-far', zoom < 0.25);
     drawConnections();
+    updateCrosshairTarget();
   }
 
-  function screenToWorld(sx, sy) {
+  function clientToCanvas(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  function screenToWorld(clientX, clientY) {
+    const screen = clientToCanvas(clientX, clientY);
     const { x, y, zoom } = state.viewport;
-    return { x: (sx - x) / zoom, y: (sy - y) / zoom };
+    return { x: (screen.x - x) / zoom, y: (screen.y - y) / zoom };
   }
 
   function worldToScreen(wx, wy) {
     const { x, y, zoom } = state.viewport;
     return { x: wx * zoom + x, y: wy * zoom + y };
+  }
+
+  function canvasCenterClient() {
+    const rect = canvas.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }
+
+  function worldAtCrosshair() {
+    const center = canvasCenterClient();
+    return screenToWorld(center.x, center.y);
+  }
+
+  function itemUnderCrosshair() {
+    const center = canvasCenterClient();
+    const el = document.elementFromPoint(center.x, center.y)?.closest('.node, .field');
+    if (!el || !nodesCont.contains(el)) return null;
+    if (el.classList.contains('node')) {
+      const item = state.nodes.find(node => node.id === el.dataset.id);
+      return item ? { kind: 'node', item, el } : null;
+    }
+    const item = state.fields.find(field => field.id === el.dataset.fieldId);
+    return item ? { kind: 'field', item, el } : null;
+  }
+
+  function updateCrosshairTarget() {
+    nodesCont.querySelectorAll('.crosshair-target').forEach(el => el.classList.remove('crosshair-target'));
+    itemUnderCrosshair()?.el.classList.add('crosshair-target');
   }
 
   function commitActiveTitleEdit() {
@@ -398,6 +440,32 @@
     if (!el) return;
     const body = el.querySelector('.node-body');
     body.innerHTML = node.body ? '<div class="md-preview">' + renderMd(node.body) + '</div>' : '';
+    updateCrosshairTarget();
+  }
+
+  function createFieldEl(field) {
+    const el = document.createElement('div');
+    el.className = 'field';
+    el.dataset.fieldId = field.id;
+    el.style.left = field.x + 'px';
+    el.style.top = field.y + 'px';
+    el.innerHTML = field.body ? renderMd(field.body) : '';
+    el.title = 'Field — Enter to edit, D to delete';
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.connectMode) return;
+      if (Date.now() < state.suppressNodeClickUntil) return;
+      openFieldModal(field.id);
+    });
+    nodesCont.appendChild(el);
+    return el;
+  }
+
+  function refreshFieldEl(field) {
+    const el = nodesCont.querySelector(`[data-field-id="${field.id}"]`);
+    if (!el) return;
+    el.innerHTML = field.body ? renderMd(field.body) : '';
+    updateCrosshairTarget();
   }
 
   // ---- Connections (SVG) ----
@@ -465,15 +533,11 @@
 
       path.addEventListener('click', (e) => {
         e.stopPropagation();
-        state.selectedConnections.clear();
-        state.selectedConnections.add(conn.id);
-        drawConnections();
+        selectConnection(conn.id);
       });
       path.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        state.selectedConnections.clear();
-        state.selectedConnections.add(conn.id);
-        drawConnections();
+        selectConnection(conn.id);
         showContextMenu(e.clientX, e.clientY);
       });
 
@@ -561,6 +625,10 @@
 
   // ---- Selection ----
   function selectNode(id) {
+    if (state.selectedConnections.size > 0) {
+      state.selectedConnections.clear();
+      drawConnections();
+    }
     state.selected.add(id);
     const el = nodesCont.querySelector(`[data-id="${id}"]`);
     if (el) el.classList.add('selected');
@@ -572,22 +640,35 @@
     if (el) el.classList.remove('selected');
   }
 
-  function clearSelection() {
+  function clearNodeSelection() {
     for (const id of state.selected) {
       const el = nodesCont.querySelector(`[data-id="${id}"]`);
       if (el) el.classList.remove('selected');
     }
     state.selected.clear();
+  }
+
+  function selectConnection(id) {
+    clearNodeSelection();
+    state.selectedConnections.clear();
+    state.selectedConnections.add(id);
+    drawConnections();
+  }
+
+  function clearSelection() {
+    clearNodeSelection();
     state.selectedConnections.clear();
     drawConnections();
   }
 
   function selectNodesInRect(sx, sy, ex, ey) {
     const { x: vx, y: vy, zoom } = state.viewport;
-    const left = Math.min(sx, ex);
-    const top = Math.min(sy, ey);
-    const right = Math.max(sx, ex);
-    const bottom = Math.max(sy, ey);
+    const start = clientToCanvas(sx, sy);
+    const end = clientToCanvas(ex, ey);
+    const left = Math.min(start.x, end.x);
+    const top = Math.min(start.y, end.y);
+    const right = Math.max(start.x, end.x);
+    const bottom = Math.max(start.y, end.y);
 
     for (const node of state.nodes) {
       const el = nodesCont.querySelector(`[data-id="${node.id}"]`);
@@ -603,15 +684,39 @@
   }
 
   // ---- Connection mode ----
+  let connectionNumberTimer = null;
+
+  function renderConnectionShortcuts() {
+    nodesCont.querySelectorAll('.connection-shortcut').forEach(el => el.remove());
+    state.connectionTargets.forEach((nodeId, index) => {
+      const nodeEl = nodesCont.querySelector(`[data-id="${nodeId}"]`);
+      if (!nodeEl) return;
+      const badge = document.createElement('button');
+      badge.type = 'button';
+      badge.className = 'connection-shortcut';
+      badge.textContent = String(index + 1);
+      badge.title = `Connect to ${nodeEl.querySelector('.node-header-text')?.textContent || 'node'}`;
+      badge.addEventListener('mousedown', e => e.stopPropagation());
+      badge.addEventListener('click', (e) => {
+        e.stopPropagation();
+        finishConnection(nodeId);
+      });
+      nodeEl.appendChild(badge);
+    });
+  }
+
   function startConnection(nodeId) {
     state.connectMode = true;
     state.connectFrom = nodeId;
+    state.connectionTargets = state.nodes.filter(node => node.id !== nodeId).map(node => node.id);
+    state.connectionNumberBuffer = '';
     canvas.classList.add('connecting');
     connectBtn.classList.add('active');
     nodesCont.querySelectorAll('.node').forEach(el => {
       el.classList.toggle('connect-target', el.dataset.id !== nodeId);
     });
-    showToast('Click another node to connect, or Esc to cancel');
+    renderConnectionShortcuts();
+    showToast('Press a displayed number or click its badge · Esc to cancel');
   }
 
   function finishConnection(toId) {
@@ -631,12 +736,50 @@
   }
 
   function cancelConnection() {
+    clearTimeout(connectionNumberTimer);
+    connectionNumberTimer = null;
     state.connectMode = false;
     state.connectFrom = null;
+    state.connectionTargets = [];
+    state.connectionNumberBuffer = '';
     canvas.classList.remove('connecting');
     connectBtn.classList.remove('active');
     svg.querySelector('.connection-temp')?.remove();
     nodesCont.querySelectorAll('.node').forEach(el => el.classList.remove('connect-target'));
+    nodesCont.querySelectorAll('.connection-shortcut').forEach(el => el.remove());
+  }
+
+  function handleConnectionNumber(digit) {
+    clearTimeout(connectionNumberTimer);
+    let buffer = state.connectionNumberBuffer + digit;
+    let matches = state.connectionTargets
+      .map((id, index) => ({ id, label: String(index + 1) }))
+      .filter(target => target.label.startsWith(buffer));
+    if (matches.length === 0) {
+      buffer = digit;
+      matches = state.connectionTargets
+        .map((id, index) => ({ id, label: String(index + 1) }))
+        .filter(target => target.label.startsWith(buffer));
+    }
+    if (matches.length === 0) {
+      state.connectionNumberBuffer = '';
+      return;
+    }
+    state.connectionNumberBuffer = buffer;
+    const exact = matches.find(target => target.label === buffer);
+    const hasLongerMatch = matches.some(target => target.label.length > buffer.length);
+    if (exact && !hasLongerMatch) {
+      finishConnection(exact.id);
+      return;
+    }
+    showToast(`Target ${buffer}…`);
+    connectionNumberTimer = setTimeout(() => {
+      const target = state.connectionTargets
+        .map((id, index) => ({ id, label: String(index + 1) }))
+        .find(candidate => candidate.label === state.connectionNumberBuffer);
+      if (target) finishConnection(target.id);
+      else state.connectionNumberBuffer = '';
+    }, 650);
   }
 
   // ---- Modal ----
@@ -645,8 +788,27 @@
     const node = state.nodes.find(n => n.id === nodeId);
     if (!node) return;
     state.modalNodeId = nodeId;
+    state.modalFieldId = null;
+    modalTitle.classList.remove('hidden');
+    modalTypeLabel.classList.add('hidden');
     modalTitle.value = node.title;
     setModalEditorValue(node.body || '');
+    refreshModalPreview();
+    editorModal.classList.remove('hidden');
+    refreshModalEditor();
+    requestAnimationFrame(refreshModalEditor);
+    focusModalEditor();
+  }
+
+  function openFieldModal(fieldId) {
+    commitActiveTitleEdit();
+    const field = state.fields.find(item => item.id === fieldId);
+    if (!field) return;
+    state.modalNodeId = null;
+    state.modalFieldId = fieldId;
+    modalTitle.classList.add('hidden');
+    modalTypeLabel.classList.remove('hidden');
+    setModalEditorValue(field.body || '');
     refreshModalPreview();
     editorModal.classList.remove('hidden');
     refreshModalEditor();
@@ -665,7 +827,16 @@
         save();
       }
     }
+    if (state.modalFieldId) {
+      const field = state.fields.find(item => item.id === state.modalFieldId);
+      if (field) {
+        field.body = getModalEditorValue();
+        refreshFieldEl(field);
+        save();
+      }
+    }
     state.modalNodeId = null;
+    state.modalFieldId = null;
     editorModal.classList.add('hidden');
   }
 
@@ -827,6 +998,7 @@
     selectNode(node.id);
     renderGroups();
     drawConnections();
+    updateCrosshairTarget();
     save();
     // Focus the title for immediate editing
     setTimeout(() => {
@@ -834,6 +1006,34 @@
       if (el) { el.focus(); selectAllText(el); }
     }, 50);
     return node;
+  }
+
+  function addField(x, y) {
+    const field = { id: genId(), x: x || 0, y: y || 0, body: '' };
+    state.fields.push(field);
+    createFieldEl(field);
+    clearSelection();
+    updateCrosshairTarget();
+    save();
+    openFieldModal(field.id);
+    return field;
+  }
+
+  function deleteNodeById(id) {
+    if (state.connectFrom === id) cancelConnection();
+    nodesCont.querySelector(`[data-id="${id}"]`)?.remove();
+    state.nodes = state.nodes.filter(node => node.id !== id);
+    state.connections = state.connections.filter(connection => connection.from !== id && connection.to !== id);
+    for (const group of state.groups) {
+      group.nodeIds = group.nodeIds.filter(nodeId => nodeId !== id);
+    }
+    state.groups = state.groups.filter(group => group.nodeIds.length > 0);
+    state.selected.delete(id);
+  }
+
+  function deleteFieldById(id) {
+    nodesCont.querySelector(`[data-field-id="${id}"]`)?.remove();
+    state.fields = state.fields.filter(field => field.id !== id);
   }
 
   function deleteSelected() {
@@ -845,21 +1045,56 @@
     // Delete selected nodes
     const ids = [...state.selected];
     for (const id of ids) {
-      const el = nodesCont.querySelector(`[data-id="${id}"]`);
-      if (el) el.remove();
-      state.nodes = state.nodes.filter(n => n.id !== id);
-      state.connections = state.connections.filter(c => c.from !== id && c.to !== id);
-      // Remove from groups
-      for (const g of state.groups) {
-        g.nodeIds = g.nodeIds.filter(nid => nid !== id);
-      }
+      deleteNodeById(id);
     }
-    state.groups = state.groups.filter(g => g.nodeIds.length > 0);
     state.selected.clear();
     renderGroups();
     drawConnections();
+    updateCrosshairTarget();
     save();
   }
+
+  function deleteCrosshairItem() {
+    const target = itemUnderCrosshair();
+    if (!target) return;
+    if (target.kind === 'node') deleteNodeById(target.item.id);
+    else deleteFieldById(target.item.id);
+    renderGroups();
+    drawConnections();
+    updateCrosshairTarget();
+    save();
+  }
+
+  function renderAddMenuSelection() {
+    addMenu.querySelectorAll('[data-kind]').forEach((button, index) => {
+      button.classList.toggle('active', index === state.addMenuIndex);
+    });
+  }
+
+  function openAddMenu() {
+    if (itemUnderCrosshair()) return;
+    state.addMenuOpen = true;
+    state.addMenuIndex = 0;
+    renderAddMenuSelection();
+    addMenu.classList.remove('hidden');
+  }
+
+  function closeAddMenu() {
+    state.addMenuOpen = false;
+    addMenu.classList.add('hidden');
+  }
+
+  function addAtCrosshair(kind) {
+    const world = worldAtCrosshair();
+    closeAddMenu();
+    if (kind === 'field') addField(world.x - 140, world.y - 28);
+    else addNode(world.x - 80, world.y - 30);
+  }
+
+  addMenu.addEventListener('click', (e) => {
+    const button = e.target.closest('[data-kind]');
+    if (button) addAtCrosshair(button.dataset.kind);
+  });
 
   function groupSelected() {
     const ids = [...state.selected].filter(id => state.nodes.some(n => n.id === id));
@@ -895,8 +1130,8 @@
     const oldZoom = state.viewport.zoom;
     newZoom = Math.max(0.1, Math.min(3, newZoom));
     if (pivotX === undefined) {
-      pivotX = window.innerWidth / 2;
-      pivotY = window.innerHeight / 2;
+      pivotX = canvas.clientWidth / 2;
+      pivotY = canvas.clientHeight / 2;
     }
     state.viewport.x = pivotX - (pivotX - state.viewport.x) * (newZoom / oldZoom);
     state.viewport.y = pivotY - (pivotY - state.viewport.y) * (newZoom / oldZoom);
@@ -906,8 +1141,8 @@
   }
 
   function fitView() {
-    if (state.nodes.length === 0) {
-      state.viewport = { x: window.innerWidth / 2, y: (window.innerHeight + 44) / 2, zoom: 1 };
+    if (state.nodes.length === 0 && state.fields.length === 0) {
+      state.viewport = { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2, zoom: 1 };
       applyViewport();
       return;
     }
@@ -921,15 +1156,24 @@
       maxX = Math.max(maxX, n.x + w);
       maxY = Math.max(maxY, n.y + h);
     }
+    for (const field of state.fields) {
+      const el = nodesCont.querySelector(`[data-field-id="${field.id}"]`);
+      const w = el ? el.offsetWidth : 280;
+      const h = el ? el.offsetHeight : 56;
+      minX = Math.min(minX, field.x);
+      minY = Math.min(minY, field.y);
+      maxX = Math.max(maxX, field.x + w);
+      maxY = Math.max(maxY, field.y + h);
+    }
     const pad = 80;
     const bw = maxX - minX + pad * 2;
     const bh = maxY - minY + pad * 2;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight - 44;
+    const vw = canvas.clientWidth;
+    const vh = canvas.clientHeight;
     const zoom = Math.min(vw / bw, vh / bh, 1.5);
     state.viewport.zoom = zoom;
     state.viewport.x = (vw - bw * zoom) / 2 - (minX - pad) * zoom;
-    state.viewport.y = (vh - bh * zoom) / 2 - (minY - pad) * zoom + 44;
+    state.viewport.y = (vh - bh * zoom) / 2 - (minY - pad) * zoom;
     applyViewport();
     save();
   }
@@ -951,10 +1195,12 @@
 
   let _initialized = false;
   function loadBoard(boardId) {
-    // Save current board first (skip during initial load)
+    // Persist the current board before changing the active-board pointer.
     if (_initialized) {
-      saveCurrentBoard();
+      save();
     }
+    if (state.connectMode) cancelConnection();
+    closeAddMenu();
     _initialized = true;
     state.activeBoardId = boardId;
     store.setItem('mindgraph_active', boardId);
@@ -963,14 +1209,16 @@
 
     if (board.data) {
       state.nodes = board.data.nodes || [];
+      state.fields = board.data.fields || [];
       state.connections = board.data.connections || [];
       state.groups = board.data.groups || [];
       state.viewport = board.data.viewport || { x: 0, y: 0, zoom: 1 };
     } else {
       state.nodes = [];
+      state.fields = [];
       state.connections = [];
       state.groups = [];
-      state.viewport = { x: window.innerWidth / 2 - 80, y: window.innerHeight / 2, zoom: 1 };
+      state.viewport = { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2, zoom: 1 };
     }
     state.selected.clear();
     state.selectedConnections.clear();
@@ -978,6 +1226,7 @@
     // Rebuild DOM
     nodesCont.innerHTML = '';
     for (const node of state.nodes) createNodeEl(node);
+    for (const field of state.fields) createFieldEl(field);
     renderGroups();
     applyViewport();
     boardNameEl.textContent = board.name;
@@ -989,6 +1238,7 @@
     if (board) {
       board.data = {
         nodes: state.nodes,
+        fields: state.fields,
         connections: state.connections,
         groups: state.groups,
         viewport: state.viewport,
@@ -1066,6 +1316,7 @@
     hideContextMenu();
 
     const target = e.target.closest('.node');
+    const fieldTarget = e.target.closest('.field');
 
     if (state.connectMode && target) {
       if (state.connectFrom) finishConnection(target.dataset.id);
@@ -1094,6 +1345,7 @@
       const node = state.nodes.find(n => n.id === nodeId);
       if (!node) return;
       state.isDragging = true;
+      state.dragKind = 'nodes';
       state.dragMoved = false;
       canvas.classList.add('grabbing');
       const world = screenToWorld(e.clientX, e.clientY);
@@ -1105,6 +1357,18 @@
         if (sn) state._dragInitial[sid] = { x: sn.x, y: sn.y };
       }
       state._dragStart = { x: node.x, y: node.y };
+      e.preventDefault();
+    } else if (fieldTarget && !state.connectMode) {
+      const field = state.fields.find(item => item.id === fieldTarget.dataset.fieldId);
+      if (!field) return;
+      state.isDragging = true;
+      state.dragKind = 'field';
+      state.dragFieldId = field.id;
+      state.dragMoved = false;
+      canvas.classList.add('grabbing');
+      const world = screenToWorld(e.clientX, e.clientY);
+      state.dragOffset = { x: world.x - field.x, y: world.y - field.y };
+      state._dragStart = { x: field.x, y: field.y };
       e.preventDefault();
     } else if (e.target === canvas || e.target === svg || e.target.id === 'nodesContainer') {
       // Start selection rect or pan
@@ -1131,6 +1395,23 @@
       const world = screenToWorld(e.clientX, e.clientY);
       const newX = world.x - state.dragOffset.x;
       const newY = world.y - state.dragOffset.y;
+      if (state.dragKind === 'field') {
+        const field = state.fields.find(item => item.id === state.dragFieldId);
+        if (field) {
+          const dx = newX - state._dragStart.x;
+          const dy = newY - state._dragStart.y;
+          if (!state.dragMoved && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) state.dragMoved = true;
+          field.x = newX;
+          field.y = newY;
+          const el = nodesCont.querySelector(`[data-field-id="${field.id}"]`);
+          if (el) {
+            el.style.left = field.x + 'px';
+            el.style.top = field.y + 'px';
+          }
+          updateCrosshairTarget();
+        }
+        return;
+      }
       const dx = newX - state._dragStart.x;
       const dy = newY - state._dragStart.y;
       if (!state.dragMoved && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) {
@@ -1148,6 +1429,7 @@
       }
       renderGroups();
       drawConnections();
+      updateCrosshairTarget();
     } else if (state.isPanning) {
       state.viewport.x = e.clientX - state.panStart.x;
       state.viewport.y = e.clientY - state.panStart.y;
@@ -1177,7 +1459,8 @@
         tempPath.classList.add('connection-temp');
         svg.appendChild(tempPath);
       }
-      const mx = e.clientX, my = e.clientY;
+      const pointer = clientToCanvas(e.clientX, e.clientY);
+      const mx = pointer.x, my = pointer.y;
       const dx = mx - cx, dy = my - cy;
       const dist = Math.sqrt(dx * dx + dy * dy);
       const curve = Math.min(dist * 0.3, 80);
@@ -1197,6 +1480,8 @@
   window.addEventListener('mouseup', (e) => {
     if (state.isDragging) {
       state.isDragging = false;
+      state.dragKind = null;
+      state.dragFieldId = null;
       canvas.classList.remove('grabbing');
       if (state.dragMoved) state.suppressNodeClickUntil = Date.now() + 150;
       save();
@@ -1222,14 +1507,34 @@
     e.preventDefault();
     const delta = -e.deltaY * 0.001;
     const newZoom = state.viewport.zoom * (1 + delta);
-    setZoom(newZoom, e.clientX, e.clientY);
+    const pivot = clientToCanvas(e.clientX, e.clientY);
+    setZoom(newZoom, pivot.x, pivot.y);
   }, { passive: false });
 
   // Keyboard
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && state.modalNodeId) {
+    if (e.key === 'Escape' && (state.modalNodeId || state.modalFieldId)) {
       e.preventDefault();
       closeModalFn();
+      return;
+    }
+
+    if (state.addMenuOpen) {
+      if (e.key === 'j' || e.key === 'J') {
+        e.preventDefault();
+        state.addMenuIndex = (state.addMenuIndex + 1) % 2;
+        renderAddMenuSelection();
+      } else if (e.key === 'k' || e.key === 'K') {
+        e.preventDefault();
+        state.addMenuIndex = (state.addMenuIndex + 1) % 2;
+        renderAddMenuSelection();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        addAtCrosshair(state.addMenuIndex === 0 ? 'node' : 'field');
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeAddMenu();
+      }
       return;
     }
 
@@ -1238,27 +1543,37 @@
       return;
     }
 
+    if (state.connectMode && /^\d$/.test(e.key)) {
+      e.preventDefault();
+      handleConnectionNumber(e.key);
+      return;
+    }
+
     const step = 40;
     switch (e.key) {
-      case 'ArrowUp':
+      case 'k': case 'K':
         e.preventDefault();
         state.viewport.y += step;
         applyViewport();
+        save();
         break;
-      case 'ArrowDown':
+      case 'j': case 'J':
         e.preventDefault();
         state.viewport.y -= step;
         applyViewport();
+        save();
         break;
-      case 'ArrowLeft':
+      case 'h': case 'H':
         e.preventDefault();
         state.viewport.x += step;
         applyViewport();
+        save();
         break;
-      case 'ArrowRight':
+      case 'l': case 'L':
         e.preventDefault();
         state.viewport.x -= step;
         applyViewport();
+        save();
         break;
       case '+': case '=':
         setZoom(state.viewport.zoom * 1.15);
@@ -1269,25 +1584,22 @@
       case 'Delete': case 'Backspace':
         if (state.selected.size > 0 || state.selectedConnections.size > 0) deleteSelected();
         break;
+      case 'd': case 'D':
+        e.preventDefault();
+        deleteCrosshairItem();
+        break;
       case 'Escape':
         if (state.connectMode) cancelConnection();
         else if (!editorModal.classList.contains('hidden')) closeModalFn();
         else clearSelection();
         hideContextMenu();
         break;
-      case 'n': case 'N':
-        if (!e.ctrlKey && !e.metaKey) {
-          const center = screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
-          addNode(center.x - 80, center.y - 30);
-        }
-        break;
       case 'c': case 'C':
         if (!e.ctrlKey && !e.metaKey) {
-          if (state.selected.size === 1) {
-            startConnection(state.selected.values().next().value);
-          } else {
-            toggleConnectMode();
-          }
+          const target = itemUnderCrosshair();
+          if (state.connectMode) cancelConnection();
+          else if (target?.kind === 'node') startConnection(target.item.id);
+          else showToast('Move a node under the crosshair first');
         }
         break;
       case 'g': case 'G':
@@ -1300,12 +1612,19 @@
         if (!e.ctrlKey && !e.metaKey) fitView();
         break;
       case 'Enter':
-        if (state.selected.size === 1) openModal(state.selected.values().next().value);
+        {
+          const target = itemUnderCrosshair();
+          if (target?.kind === 'node') openModal(target.item.id);
+          else if (target?.kind === 'field') openFieldModal(target.item.id);
+        }
         break;
       case 'a': case 'A':
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
           for (const n of state.nodes) selectNode(n.id);
+        } else {
+          e.preventDefault();
+          openAddMenu();
         }
         break;
     }
@@ -1313,14 +1632,15 @@
 
   // Double-click canvas to add node
   canvas.addEventListener('dblclick', (e) => {
-    if (e.target.closest('.node')) return;
+    if (e.target.closest('.node, .field')) return;
     const world = screenToWorld(e.clientX, e.clientY);
     addNode(world.x - 80, world.y - 20);
   });
 
   // ---- Toolbar buttons ----
   $('#btnAddNode').addEventListener('click', () => {
-    const center = screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
+    const rect = canvas.getBoundingClientRect();
+    const center = screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
     addNode(center.x - 80, center.y - 30);
   });
 
@@ -1371,6 +1691,7 @@
     if (!e.target.closest('.context-menu') && !e.target.closest('.color-picker')) {
       hideContextMenu();
     }
+    if (!e.target.closest('.add-menu')) closeAddMenu();
   });
 
   // Right-click on canvas
@@ -1411,9 +1732,9 @@
 
   // ---- Init ----
   loadBoards();
-  if (state.nodes.length === 0) {
+  if (state.nodes.length === 0 && state.fields.length === 0) {
     // Show initial welcome state
-    setTimeout(() => showToast('Double-click to create a node, or press N'), 500);
+    setTimeout(() => showToast('Press A to add at the crosshair'), 500);
   }
 
   // Autosave every 10 seconds

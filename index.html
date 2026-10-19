@@ -85,8 +85,16 @@
       </defs>
     </svg>
     <div id="nodesContainer"></div>
+    <div id="boardCrosshair" class="board-crosshair" aria-hidden="true"></div>
     <!-- Selection rectangle -->
     <div id="selectionRect" class="selection-rect hidden"></div>
+  </div>
+
+  <!-- Keyboard add menu, opened with A at the crosshair -->
+  <div id="addMenu" class="add-menu hidden" role="menu" aria-label="Add to board">
+    <button type="button" role="menuitem" data-kind="node" class="active">Node</button>
+    <button type="button" role="menuitem" data-kind="field">Field</button>
+    <div class="add-menu-hint">j/k to move · Enter to add</div>
   </div>
 
   <!-- Board panel -->
@@ -106,6 +114,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <input id="modalTitle" type="text" spellcheck="false" placeholder="Node title">
+        <span id="modalTypeLabel" class="modal-type-label hidden">Field</span>
         <button id="closeModal" class="modal-close" aria-label="Close editor">&times;</button>
       </div>
       <div class="modal-body">
