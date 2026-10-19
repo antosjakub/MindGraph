@@ -10,8 +10,9 @@ This project seeks to reproduce this in a digital form.
 | Key                 | Action                       |
 | ------------------- | ---------------------------- |
 | H / J / K / L       | Pan the board view           |
+| S                   | Pin/release node at crosshair while panning |
 | A                   | Add node or field at crosshair |
-| C                   | Connect node under crosshair |
+| C                   | Toggle connection from node under crosshair |
 | G                   | Group selected               |
 | B                   | Toggle boards panel          |
 | F                   | Fit view                     |

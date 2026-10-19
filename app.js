@@ -37,6 +37,7 @@
     connectFrom: null,
     connectionTargets: [],
     connectionNumberBuffer: '',
+    movingNodeId: null,
     isDragging: false,
     isPanning: false,
     isSelecting: false,
@@ -721,16 +722,19 @@
 
   function finishConnection(toId) {
     if (state.connectFrom && toId !== state.connectFrom) {
-      // Check if connection already exists
-      const exists = state.connections.some(c =>
+      const existing = state.connections.find(c =>
         (c.from === state.connectFrom && c.to === toId) ||
         (c.from === toId && c.to === state.connectFrom)
       );
-      if (!exists) {
+      if (existing) {
+        state.connections = state.connections.filter(connection => connection.id !== existing.id);
+        showToast('Connection removed');
+      } else {
         state.connections.push({ id: genId(), from: state.connectFrom, to: toId });
-        drawConnections();
-        save();
+        showToast('Nodes connected');
       }
+      drawConnections();
+      save();
     }
     cancelConnection();
   }
@@ -905,6 +909,13 @@
   });
 
   $('#closeModal').addEventListener('click', closeModalFn);
+  // CodeMirror's Vim keymap consumes Escape, so intercept it during capture.
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || editorModal.classList.contains('hidden')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeModalFn();
+  }, true);
   editorModal.addEventListener('click', (e) => {
     if (
       e.target === editorModal &&
@@ -1021,6 +1032,7 @@
 
   function deleteNodeById(id) {
     if (state.connectFrom === id) cancelConnection();
+    if (state.movingNodeId === id) state.movingNodeId = null;
     nodesCont.querySelector(`[data-id="${id}"]`)?.remove();
     state.nodes = state.nodes.filter(node => node.id !== id);
     state.connections = state.connections.filter(connection => connection.from !== id && connection.to !== id);
@@ -1062,6 +1074,49 @@
     renderGroups();
     drawConnections();
     updateCrosshairTarget();
+    save();
+  }
+
+  function releaseMovingNode() {
+    if (state.movingNodeId) {
+      nodesCont.querySelector(`[data-id="${state.movingNodeId}"]`)?.classList.remove('keyboard-moving');
+    }
+    state.movingNodeId = null;
+  }
+
+  function toggleMovingNode() {
+    if (state.movingNodeId) {
+      releaseMovingNode();
+      showToast('Node released');
+      return;
+    }
+    const target = itemUnderCrosshair();
+    if (target?.kind !== 'node') {
+      showToast('Move a node under the crosshair first');
+      return;
+    }
+    if (state.connectMode) cancelConnection();
+    state.movingNodeId = target.item.id;
+    target.el.classList.add('keyboard-moving');
+    showToast('Node pinned · pan with H/J/K/L · S to release');
+  }
+
+  function panBoard(dx, dy) {
+    if (state.movingNodeId) {
+      const node = state.nodes.find(item => item.id === state.movingNodeId);
+      if (node) {
+        // Counteract the viewport movement so the grabbed node stays under the crosshair.
+        node.x -= dx / state.viewport.zoom;
+        node.y -= dy / state.viewport.zoom;
+        updateNodeEl(node);
+        renderGroups();
+      } else {
+        releaseMovingNode();
+      }
+    }
+    state.viewport.x += dx;
+    state.viewport.y += dy;
+    applyViewport();
     save();
   }
 
@@ -1200,6 +1255,7 @@
       save();
     }
     if (state.connectMode) cancelConnection();
+    releaseMovingNode();
     closeAddMenu();
     _initialized = true;
     state.activeBoardId = boardId;
@@ -1553,27 +1609,19 @@
     switch (e.key) {
       case 'k': case 'K':
         e.preventDefault();
-        state.viewport.y += step;
-        applyViewport();
-        save();
+        panBoard(0, step);
         break;
       case 'j': case 'J':
         e.preventDefault();
-        state.viewport.y -= step;
-        applyViewport();
-        save();
+        panBoard(0, -step);
         break;
       case 'h': case 'H':
         e.preventDefault();
-        state.viewport.x += step;
-        applyViewport();
-        save();
+        panBoard(step, 0);
         break;
       case 'l': case 'L':
         e.preventDefault();
-        state.viewport.x -= step;
-        applyViewport();
-        save();
+        panBoard(-step, 0);
         break;
       case '+': case '=':
         setZoom(state.viewport.zoom * 1.15);
@@ -1587,6 +1635,10 @@
       case 'd': case 'D':
         e.preventDefault();
         deleteCrosshairItem();
+        break;
+      case 's': case 'S':
+        e.preventDefault();
+        toggleMovingNode();
         break;
       case 'Escape':
         if (state.connectMode) cancelConnection();

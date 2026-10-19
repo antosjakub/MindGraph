@@ -204,6 +204,10 @@ html, body {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-dim), 0 0 18px var(--accent-glow);
 }
+.node.keyboard-moving {
+  border-color: #fdab43;
+  box-shadow: 0 0 0 2px rgba(253, 171, 67, 0.25), 0 0 18px rgba(253, 171, 67, 0.12);
+}
 
 .add-menu {
   position: fixed;
